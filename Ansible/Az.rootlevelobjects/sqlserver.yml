@@ -1,0 +1,24 @@
+---
+- hosts: localhost
+  connection: local
+  tasks:
+    - name: Adding Firewall Rule
+      azure_rm_sqlfirewallrule:
+        resource_group: "{{ item.resource_group }}"
+        server_name: "{{ item.server_name }}"
+        name: "{{ item.name }}"
+        start_ip_address: "{{ item.start_ip_address }}"
+        end_ip_address: "{{ item.end_ip_address }}"
+      loop:
+        - { resource_group: "{{ rgname }}", server_name: "{{ sqlservername }}", name: "{{ ipname1 }}", start_ip_address: "{{ ipstart1 }}", end_ip_address: "{{ ipend1 }}" }
+        - { resource_group: "{{ rgname }}", server_name: "{{ sqlservername }}", name: "{{ ipname2 }}", start_ip_address: "{{ ipstart2 }}", end_ip_address: "{{ ipend2 }}" }
+        - { resource_group: "{{ rgname }}", server_name: "{{ sqlservername }}", name: "{{ ipname3 }}", start_ip_address: "{{ ipstart3 }}", end_ip_address: "{{ ipend3 }}" }
+        - { resource_group: "{{ rgname }}", server_name: "{{ sqlservername }}", name: "{{ ipname4 }}", start_ip_address: "{{ ipstart4 }}", end_ip_address: "{{ ipend4 }}" }
+
+    - name: Assign role to Microsoft Enterprise application group
+      azure_rm_roleassignment:
+        azure_environment: AzureCloud
+        resource_group_name: "{{ rgname }}"
+        scope: "/subscriptions/{{ subscription_id }}/resourceGroups/{{ rgname }}/providers/Microsoft.Sql/servers/{{ sqlservername }}"
+        role_definition_name: "Contributor" # Or any other appropriate role
+        principal_id: "{{ microsoft_enterprise_app_principal_id }}"

@@ -1,0 +1,508 @@
+########################################################################
+# Don't define triggers here.  Define them in the UI.
+# Variables are newly defined in this YAML file instead of the UI
+########################################################################
+
+variables: 
+  dockerfilePath: '$(Build.SourcesDirectory)/src/KII.Platform.WebApi.MediaService.Api/Dockerfile'
+  vmImageName: 'ubuntu-latest'
+  BuildConfiguration: 'Release'
+  SQLProjPublishPath: '/s/data/KII.Platform.WebApi.MediaService.SqlDatabase/bin/'
+  SONARQUBE_PROJECT_KEY: KII.Platform.WebApi.MediaService.Api
+  SONARQUBE_PROJECT_NAME: 'KII.Platform.WebApi.MediaService.Api'
+  ${{ if eq(variables['Build.DefinitionName'], 'PR Validation - releaseCandidate') }}:
+    BUILD_SQL: true
+    PUBLISH_ARTIFACTS: false
+    PUBLISH_SONARQUBE: true
+    DEPLOY_DOCKER: false
+    SONARQUBE_SERVER_ENDPOINT: 'SonarQube - Developer Edition'
+  ${{ elseif eq(variables['Build.DefinitionName'], 'Publish - releaseCandidate') }}:
+    BUILD_SQL: false
+    PUBLISH_ARTIFACTS: true
+    PUBLISH_SONARQUBE: false
+    DEPLOY_DOCKER: true
+    SONARQUBE_SERVER_ENDPOINT: 'SonarQube - Developer Edition'
+
+stages:
+- stage: Build_Image
+  displayName: Build Image
+  jobs:
+  - job: Build_Image
+    displayName: Build Image
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - checkout: self
+      persistCredentials: true
+    - script: |
+        source vars.env 
+        echo "Loaded variables from file:"
+        echo "imageRepository: $imageRepository"
+        echo "publishVersion: $publishVersion"
+        echo "##vso[task.setvariable variable=imageRepository]$imageRepository"
+        echo "##vso[task.setvariable variable=publishVersion]$publishVersion"
+      displayName: 'Set and Use Variables for Versioning'
+    - task: NuGetAuthenticate@1
+      displayName: 'Authenticate to NuGet'
+    - task: Docker@2
+      displayName: 'Build Docker image'
+      inputs:
+        command: 'build'
+        repository: $(imageRepository)
+        dockerfile: $(dockerfilePath)
+        buildContext: $(Build.SourcesDirectory)
+        containerRegistry: 'dockerRegistryServiceConnection'
+        arguments: '--build-arg FEED_ACCESSTOKEN=$(VSS_NUGET_ACCESSTOKEN)'
+        tags: |
+          $(publishVersion)
+          latest
+    - task: Docker@2
+      displayName: 'Push Docker image to container registry'
+      condition: eq(variables['DEPLOY_DOCKER'], 'true')
+      inputs:
+        command: 'push'
+        repository: $(imageRepository)
+        containerRegistry: 'dockerRegistryServiceConnection'
+        tags: |
+          $(publishVersion)
+          latest
+    - script: |
+        source vars.env
+        echo "Loaded variables from file:"
+        echo "publishVersion: $publishVersion"
+        echo "##vso[task.setvariable variable=publishVersion]$publishVersion"
+        git config --global user.name "BuildService"
+        git config --global user.email "azure.buildservice@kyocera.com"
+        git status
+        git add .
+        git status
+        git commit -am "Release v$(publishVersion)"
+        git status
+        git tag $(publishVersion)
+        git push origin $(publishVersion)
+        git status
+        git log
+      workingDirectory: $(Build.SourcesDirectory)
+      displayName: 'Create and push Git tag'
+      condition: eq(variables['DEPLOY_DOCKER'], 'true')
+    - script: |
+        echo "Using imageRepository: $(imageRepository) and publishVersion: $(publishVersion)"
+      displayName: 'Display Output Variables'
+
+- stage: BuildAndPublishArtifacts
+  displayName: 'Build SQL'
+  dependsOn: Build_Image
+  condition: succeeded()
+  jobs:
+  - job: Job_SQLProjBuildDB
+    pool:
+      vmImage: 'windows-latest'  
+    displayName: Build Database from DB Project
+    steps:
+      - task: CmdLine@2
+        displayName: Dump directory contents
+        inputs:
+          script: |
+            pwd
+            echo BuildConfiguration == $(BuildConfiguration)
+            echo BuildPlatform == $(BuildPlatform)
+            echo SQLProjPublishPath == $(SQLProjPublishPath)
+            echo Build.SourcesDirectory == $(Build.SourcesDirectory)
+            dir $(Build.SourcesDirectory)
+            echo Build.artifactstagingdirectory == $(Build.artifactstagingdirectory)
+            dir $(Build.artifactstagingdirectory)
+            echo Build.BinariesDirectory == $(Build.BinariesDirectory)
+            dir $(Build.BinariesDirectory)
+            echo "START OF PART II -- Build the database"
+      - task: VSBuild@1
+        displayName: 'Build database project'
+        inputs:
+          solution: '**\*.sqlproj'
+          msbuildArgs: '/p:DSP="Microsoft.Data.Tools.Schema.Sql.SqlAzureV12DatabaseSchemaProvider"'
+          configuration: '$(BuildConfiguration)'
+      - task: PublishBuildArtifacts@1
+        displayName: 'Publish database Artifacts'
+        inputs:
+          PathtoPublish: '$(agent.builddirectory)$(SQLProjPublishPath)$(BuildConfiguration)'
+          ArtifactName: 'dropDB'
+      - task: CmdLine@2
+        displayName: Dump directory contents
+        inputs:
+          script: |
+            pwd
+            echo Build.SourcesDirectory == $(Build.SourcesDirectory)
+            dir $(Build.SourcesDirectory)
+            echo Build.artifactstagingdirectory == $(Build.artifactstagingdirectory)
+            dir $(Build.artifactstagingdirectory)
+            echo Build.BinariesDirectory == $(Build.BinariesDirectory)
+            dir $(Build.BinariesDirectory)
+
+- stage: Dev_Deploy
+  displayName: 'Deploy to Dev'
+  dependsOn: BuildAndPublishArtifacts
+  condition: |
+    and(eq(variables['DEPLOY_DOCKER'], 'true'), succeeded())
+  jobs:
+  - job: DeployWebApp_Dev
+    displayName: 'Deploy to Azure Web App'   
+    steps:
+    - task: AzureKeyVault@2
+      inputs:
+        azureSubscription: 'CI/CD Connection String DevTest' 
+        KeyVaultName: 'kv-kii-es-mediasrv-dev'
+        SecretsFilter: '*' 
+    - script: |
+        echo "Secret fetched from Key Vault: $(appName)"
+        echo "Secret fetched from Key Vault: $(containerRegistry)"
+      displayName: 'Use Key Vault Secret'
+    - checkout: self
+      persistCredentials: true
+    - script: |
+        source vars.env 
+        echo "Loaded variables from file:"
+        echo "imageRepository: $imageRepository"
+        echo "publishVersion: $publishVersion"
+        echo "##vso[task.setvariable variable=imageRepository]$imageRepository"
+        echo "##vso[task.setvariable variable=publishVersion]$publishVersion"
+      displayName: 'Set and Use Variables for Versioning'
+    - task: AzureWebAppContainer@1
+      displayName: 'Azure Web App on Container Deploy'
+      inputs:
+        azureSubscription: 'CI/CD Connection String DevTest'  
+        appName: $(appName)  
+        containers: '$(containerRegistry)/$(imageRepository):$(publishVersion)'
+
+  - job: DeployDatabase
+    displayName: 'Deploy DACPAC to Azure SQL Database'
+    dependsOn: DeployWebApp_Dev
+    condition: succeeded()
+    pool:
+      vmImage: 'windows-latest'
+    steps:
+    - task: AzureKeyVault@2
+      inputs:
+        azureSubscription: 'CI/CD Connection String DevTest'
+        KeyVaultName: 'kv-kii-es-mediasrv-dev'
+        SecretsFilter: '*'  
+    - script: |
+        echo "Secret fetched from Key Vault: $(SQLServerName)"
+        echo "Secret fetched from Key Vault: $(SQLDatabase)"
+        echo "Secret fetched from Key Vault: $(SQLUsername)"
+        echo "Secret fetched from Key Vault: $(SQLPassword)"
+      displayName: 'Use Key Vault Secret'
+    - task: DownloadBuildArtifacts@0
+      displayName: 'Download DACPAC artifact'
+      inputs:
+        artifactName: 'dropDB'
+        downloadPath: '$(System.ArtifactsDirectory)'
+      
+    - task: SqlAzureDacpacDeployment@1
+      displayName: 'Deploy DACPAC to Azure SQL Database'
+      inputs:
+        azureSubscription: 'CI/CD Connection String DevTest'
+        authenticationType: 'Server'
+        serverName: $(SQLServerName)
+        databaseName: $(SQLDatabase)
+        dacpacFile: '$(System.ArtifactsDirectory)/dropDB/*.dacpac'
+        sqlUsername: $(SQLUsername)
+        sqlPassword: $(SQLPassword)
+
+- stage: QA_Deploy
+  displayName: 'Deploy to QA'
+  dependsOn: BuildAndPublishArtifacts
+  condition: |
+    and(eq(variables['DEPLOY_DOCKER'], 'true'), succeeded())
+  jobs:
+  - deployment: DeployWebApp_QA
+    displayName: 'Deploy to Azure Web App - QA'
+    environment: 'QA_approver'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: AzureKeyVault@2
+            inputs:
+              azureSubscription: 'CI/CD Connection String DevTest'
+              KeyVaultName: 'kv-kii-es-mediasrv-qa'
+              SecretsFilter: '*'
+          - script: |
+              echo "Secret fetched from Key Vault: $(appName)"
+              echo "Secret fetched from Key Vault: $(containerRegistry)"
+            displayName: 'Use Key Vault Secret'
+          - checkout: self
+            persistCredentials: true
+          - script: |
+              source vars.env 
+              echo "Loaded variables from file:"
+              echo "imageRepository: $imageRepository"
+              echo "publishVersion: $publishVersion"
+              echo "##vso[task.setvariable variable=imageRepository]$imageRepository"
+              echo "##vso[task.setvariable variable=publishVersion]$publishVersion"
+            displayName: 'Set and Use Variables for Versioning'
+          - task: AzureWebAppContainer@1
+            displayName: 'Azure Web App on Container Deploy'
+            inputs:
+              azureSubscription: 'CI/CD Connection String DevTest'
+              appName: $(appName)
+              containers: '$(containerRegistry)/$(imageRepository):$(publishVersion)'
+
+  - job: DeployDatabase
+    displayName: 'Deploy DACPAC to Azure SQL Database'
+    dependsOn: DeployWebApp_QA
+    condition: succeeded()
+    pool:
+      vmImage: 'windows-latest'
+    steps:
+    - task: AzureKeyVault@2
+      inputs:
+        azureSubscription: 'CI/CD Connection String DevTest'
+        KeyVaultName: 'kv-kii-es-mediasrv-qa'
+        SecretsFilter: '*'
+    - script: |
+        echo "Secret fetched from Key Vault: $(SQLServerName)"
+        echo "Secret fetched from Key Vault: $(SQLDatabase)"
+        echo "Secret fetched from Key Vault: $(SQLUsername)"
+        echo "Secret fetched from Key Vault: $(SQLPassword)"
+      displayName: 'Use Key Vault Secret'
+    - task: DownloadBuildArtifacts@0
+      displayName: 'Download DACPAC artifact'
+      inputs:
+        artifactName: 'dropDB'
+        downloadPath: '$(System.ArtifactsDirectory)'
+    - task: SqlAzureDacpacDeployment@1
+      displayName: 'Deploy DACPAC to Azure SQL Database'
+      inputs:
+        azureSubscription: 'CI/CD Connection String DevTest'
+        authenticationType: 'Server'
+        serverName: $(SQLServerName)
+        databaseName: $(SQLDatabase)
+        dacpacFile: '$(System.ArtifactsDirectory)/dropDB/*.dacpac'
+        sqlUsername: $(SQLUsername)
+        sqlPassword: $(SQLPassword)
+
+- stage: Send_Notification_QA
+  displayName: 'Send Notification'
+  dependsOn: BuildAndPublishArtifacts
+  condition: |
+    and(eq(variables['DEPLOY_DOCKER'], 'true'), succeeded())
+  jobs:
+    - job: Send_Notification
+      displayName: 'Send Notification to Environment Approver'
+      steps:
+        - script: |
+            
+            teamsWebhook="https://kyocera4.webhook.office.com/webhookb2/1ceec420-9abe-41b5-bd5b-68a3c60a78c8@1eb2716d-0dd3-4ae7-8d89-60b3faa22f6a/IncomingWebhook/0860d7e961f04b7083baa48c88ac38b3/b8f1c9d3-e8ee-4331-abda-ef0c9faaa3a3"
+            buildId=$(Build.BuildId)
+            title="QA Deployment is in progress"
+            environment="QA"
+            message="<strong>Title:</strong> QA Deployment is in progress<br>
+            **Environment:** $environment <br>
+            **Project:** MediaServiceAPI <br>
+            <strong>Approver:</strong> Justo, Rolando or Theisen, Frank<br><br> 
+
+            Please approve deployment <a href='https://kyocera.visualstudio.com/KPLAT%20Web%20APIs/_build/results?buildId=$buildId'>here</a>"
+
+            curl -H "Content-Type: application/json" -d "{\"text\": \"$message\"}" -X POST $teamsWebhook
+          displayName: 'Send Teams Notification'
+
+- stage: UAT_Deploy
+  displayName: 'Deploy to UAT'
+  dependsOn: BuildAndPublishArtifacts
+  condition: |
+    and(eq(variables['DEPLOY_DOCKER'], 'true'), succeeded())
+  jobs:
+  - deployment: DeployWebApp_UAT
+    displayName: 'Deploy to Azure Web App - UAT'
+    environment: 'UAT_approver'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: AzureKeyVault@2
+            inputs:
+              azureSubscription: 'CI/CD Connection String DevTest'
+              KeyVaultName: 'kv-kii-es-mediasrv-uat'
+              SecretsFilter: '*'
+          - script: |
+              echo "Secret fetched from Key Vault: $(appName)"
+              echo "Secret fetched from Key Vault: $(containerRegistry)"
+            displayName: 'Use Key Vault Secret'
+          - checkout: self
+            persistCredentials: true
+          - script: |
+              source vars.env 
+              echo "Loaded variables from file:"
+              echo "imageRepository: $imageRepository"
+              echo "publishVersion: $publishVersion"
+              echo "##vso[task.setvariable variable=imageRepository]$imageRepository"
+              echo "##vso[task.setvariable variable=publishVersion]$publishVersion"
+            displayName: 'Set and Use Variables for Versioning'
+          - task: AzureWebAppContainer@1
+            displayName: 'Azure Web App on Container Deploy'
+            inputs:
+              azureSubscription: 'CI/CD Connection String DevTest'
+              appName: $(appName)
+              containers: '$(containerRegistry)/$(imageRepository):$(publishVersion)'
+
+  - job: DeployDatabase
+    displayName: 'Deploy DACPAC to Azure SQL Database'
+    dependsOn: DeployWebApp_UAT
+    condition: succeeded()
+    pool:
+      vmImage: 'windows-latest'
+    steps:
+    - task: AzureKeyVault@2
+      inputs:
+        azureSubscription: 'CI/CD Connection String DevTest'
+        KeyVaultName: 'kv-kii-es-mediasrv-uat'
+        SecretsFilter: '*'
+    - script: |
+        echo "Secret fetched from Key Vault: $(SQLServerName)"
+        echo "Secret fetched from Key Vault: $(SQLDatabase)"
+        echo "Secret fetched from Key Vault: $(SQLUsername)"
+        echo "Secret fetched from Key Vault: $(SQLPassword)"
+      displayName: 'Use Key Vault Secret'
+    - task: DownloadBuildArtifacts@0
+      displayName: 'Download DACPAC artifact'
+      inputs:
+        artifactName: 'dropDB'
+        downloadPath: '$(System.ArtifactsDirectory)'
+    - task: SqlAzureDacpacDeployment@1
+      displayName: 'Deploy DACPAC to Azure SQL Database'
+      inputs:
+        azureSubscription: 'CI/CD Connection String DevTest'
+        authenticationType: 'Server'
+        serverName: $(SQLServerName)
+        databaseName: $(SQLDatabase)
+        dacpacFile: '$(System.ArtifactsDirectory)/dropDB/*.dacpac'
+        sqlUsername: $(SQLUsername)
+        sqlPassword: $(SQLPassword)
+
+- stage: Send_Notification_UAT
+  displayName: 'Send Notification'
+  dependsOn: BuildAndPublishArtifacts
+  condition: |
+    and(eq(variables['DEPLOY_DOCKER'], 'true'), succeeded())
+  jobs:
+    - job: Send_Notification
+      displayName: 'Send Notification to Environment Approver'
+      steps:
+        - script: |
+            teamsWebhook="https://kyocera4.webhook.office.com/webhookb2/1ceec420-9abe-41b5-bd5b-68a3c60a78c8@1eb2716d-0dd3-4ae7-8d89-60b3faa22f6a/IncomingWebhook/0860d7e961f04b7083baa48c88ac38b3/b8f1c9d3-e8ee-4331-abda-ef0c9faaa3a3"
+            buildId=$(Build.BuildId)
+            title="UAT Deployment is in progress"
+            environment="UAT"
+            message="<strong>Title:</strong> UAT Deployment is in progress<br>
+            **Environment:** $environment <br>
+            **Project:** MediaServiceAPI <br>
+            <strong>Approver:</strong> Coronado, Nixon<br><br> 
+
+            Please approve deployment <a href='https://kyocera.visualstudio.com/KPLAT%20Web%20APIs/_build/results?buildId=$buildId'>here</a>"
+
+            curl -H "Content-Type: application/json" -d "{\"text\": \"$message\"}" -X POST $teamsWebhook
+          displayName: 'Send Teams Notification'
+
+- stage: Swap_Deploy
+  displayName: 'Deploy to Swap'
+  dependsOn: BuildAndPublishArtifacts
+  condition: |
+    and(eq(variables['DEPLOY_DOCKER'], 'true'), succeeded())
+  jobs:
+  - deployment: DeployWebApp_Swap
+    displayName: 'Deploy to Azure Web App - Swap'
+    environment: 'Swap_approver'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: AzureKeyVault@2
+            inputs:
+              azureSubscription: 'CI/CD Connection String Prod'
+              KeyVaultName: 'kv-kii-es-mediasrv-prod'
+              SecretsFilter: '*'
+          - script: |
+              echo "Secret fetched from Key Vault: $(appName)"
+              echo "Secret fetched from Key Vault: $(containerRegistry)"
+            displayName: 'Use Key Vault Secret'
+          - checkout: self
+            persistCredentials: true
+          - script: |
+              source vars.env 
+              echo "Loaded variables from file:"
+              echo "imageRepository: $imageRepository"
+              echo "publishVersion: $publishVersion"
+              echo "##vso[task.setvariable variable=imageRepository]$imageRepository"
+              echo "##vso[task.setvariable variable=publishVersion]$publishVersion"
+            displayName: 'Set and Use Variables for Versioning'
+          - task: AzureWebAppContainer@1
+            displayName: 'Azure Web App on Container Deploy'
+            inputs:
+              azureSubscription: 'CI/CD Connection String Prod'
+              appName: $(appName)
+              slotName: 'swap'
+              containers: '$(containerRegistry)/$(imageRepository):$(publishVersion)'
+          - task: AzureAppServiceManage@0
+            inputs:
+              azureSubscription: 'CI/CD Connection String Prod'
+              WebAppName: $(appName)
+              ResourceGroupName: "rg-kii-es-mediaservice-prod"
+              SourceSlot: swap
+              SwapWithProduction: true
+
+  - job: DeployDatabase
+    displayName: 'Deploy DACPAC to Azure SQL Database'
+    dependsOn: DeployWebApp_Swap
+    condition: succeeded()
+    pool:
+      vmImage: 'windows-latest'
+    steps:
+    - task: AzureKeyVault@2
+      inputs:
+        azureSubscription: 'CI/CD Connection String Prod'
+        KeyVaultName: 'kv-kii-es-mediasrv-prod'
+        SecretsFilter: '*'
+    - script: |
+        echo "Secret fetched from Key Vault: $(SQLServerName)"
+        echo "Secret fetched from Key Vault: $(SQLDatabase)"
+        echo "Secret fetched from Key Vault: $(SQLUsername)"
+        echo "Secret fetched from Key Vault: $(SQLPassword)"
+      displayName: 'Use Key Vault Secret'
+    - task: DownloadBuildArtifacts@0
+      displayName: 'Download DACPAC artifact'
+      inputs:
+        artifactName: 'dropDB'
+        downloadPath: '$(System.ArtifactsDirectory)'
+    - task: SqlAzureDacpacDeployment@1
+      displayName: 'Deploy DACPAC to Azure SQL Database'
+      inputs:
+        azureSubscription: 'CI/CD Connection String Prod'
+        authenticationType: 'Server'
+        serverName: $(SQLServerName)
+        databaseName: $(SQLDatabase)
+        dacpacFile: '$(System.ArtifactsDirectory)/dropDB/*.dacpac'
+        sqlUsername: $(SQLUsername)
+        sqlPassword: $(SQLPassword)
+
+- stage: Send_Notification_Prod
+  displayName: 'Send Notification'
+  dependsOn: BuildAndPublishArtifacts
+  condition: |
+    and(eq(variables['DEPLOY_DOCKER'], 'true'), succeeded())
+  jobs:
+    - job: Send_Notification
+      displayName: 'Send Notification to Environment Approver'
+      steps:
+        - script: |
+            teamsWebhook="https://kyocera4.webhook.office.com/webhookb2/1ceec420-9abe-41b5-bd5b-68a3c60a78c8@1eb2716d-0dd3-4ae7-8d89-60b3faa22f6a/IncomingWebhook/0860d7e961f04b7083baa48c88ac38b3/b8f1c9d3-e8ee-4331-abda-ef0c9faaa3a3"
+            buildId=$(Build.BuildId)
+            title="Production Deployment is in progress"
+            environment="Production"
+            message="<strong>Title:</strong> Production Deployment is in progress<br>
+            **Environment:** $environment <br>
+            **Project:** MediaServiceAPI <br>
+            <strong>Approver:</strong> Johnson, Caleb | Higa, Mike | Giva, Gervel<br><br> 
+
+            Please approve deployment <a href='https://kyocera.visualstudio.com/KPLAT%20Web%20APIs/_build/results?buildId=$buildId'>here</a>"
+
+            curl -H "Content-Type: application/json" -d "{\"text\": \"$message\"}" -X POST $teamsWebhook
+          displayName: 'Send Teams Notification'

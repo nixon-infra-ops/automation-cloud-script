@@ -1,0 +1,16 @@
+name: Terraform - deploy
+
+trigger: none
+
+variables:
+  - name: rootFolder
+    value: 'terraform/'
+  - name: Environment
+    value: 'TerraformScriptApprover'
+  
+stages:
+- template: deploy/templates/terraform-template.yml
+  parameters:
+    rootFolder: $(rootFolder)
+    tfvarsFile: $(tfvarsFile)
+    Environment: $(Environment)

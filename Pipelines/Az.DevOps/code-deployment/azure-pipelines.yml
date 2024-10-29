@@ -1,0 +1,272 @@
+########################################################################
+# Don't define triggers here.  Define them in the UI.
+# Variables are new defined in this YAML file instead of the UI
+########################################################################
+# trigger:
+# - development
+
+pool:
+  vmImage: windows-latest
+  name: Azure Pipelines
+
+variables:
+  BuildConfiguration: 'Release'
+  BuildPlatform: 'any cpu'
+  SQLProjPublishPath: '/s/data/QaulityAlertsDB/bin/'
+  SONARQUBE_PROJECT_KEY: QMS---Quality-Alerts
+  SONARQUBE_PROJECT_NAME: 'QMS - Quality Alerts'
+  ${{ if or(eq(variables['Build.DefinitionName'], 'dev Publish'), eq(variables['Build.DefinitionName'], 'stage Publish'), eq(variables['Build.DefinitionName'], 'swap Publish')) }}:
+    BUILD_SQL: true
+    PUBLISH_ARTIFACTS: true
+    PUBLISH_SONARQUBE: false
+    SONARQUBE_SERVER_ENDPOINT: 'SonarQube - Developer Edition'
+  ${{ elseif eq(variables['Build.DefinitionName'], 'PR Validation - Publish') }}:
+    BUILD_SQL: false
+    PUBLISH_ARTIFACTS: false
+    PUBLISH_SONARQUBE: true
+    SONARQUBE_SERVER_ENDPOINT: 'SonarQube - Developer Edition'
+  ${{ elseif eq(variables['Build.DefinitionName'], 'PR Validation - Development') }}:
+    BUILD_SQL: true
+    PUBLISH_ARTIFACTS: true
+    PUBLISH_SONARQUBE: true
+    SONARQUBE_SERVER_ENDPOINT: 'SonarQube - Developer Edition'
+  ${{ elseif eq(variables['Build.DefinitionName'], 'Build Analysis - Development') }}:
+    BUILD_SQL: false
+    PUBLISH_ARTIFACTS: false
+    PUBLISH_SONARQUBE: true
+    SONARQUBE_SERVER_ENDPOINT: 'SonarQube - Developer Edition'
+
+
+jobs:
+########################################################################
+# Part I: Build the application.
+########################################################################
+- job: Job_BuildApplication
+  displayName: Build the App
+  steps:
+    - task: CmdLine@2
+      displayName: Dump directory contents
+      inputs:
+        script: |
+          pwd
+          
+          echo BuildConfiguration == $(BuildConfiguration)
+          
+          echo BuildPlatform == $(BuildPlatform)
+          
+          echo Build.SourcesDirectory == $(Build.SourcesDirectory)
+          
+          tree "$(Build.SourcesDirectory)" /A
+          
+          dir $(Build.SourcesDirectory)
+          
+          echo Build.artifactstagingdirectory == $(Build.artifactstagingdirectory)
+          
+          dir $(Build.artifactstagingdirectory)
+          
+          echo Build.BinariesDirectory == $(Build.BinariesDirectory)
+          
+          dir $(Build.BinariesDirectory)
+          
+          echo Build.DefinitionName == $(Build.DefinitionName)
+          echo BUILD_SQL == $(BUILD_SQL)
+          echo PUBLISH_ARTIFACTS == $(PUBLISH_ARTIFACTS)
+          echo PUBLISH_SONARQUBE == $(PUBLISH_SONARQUBE)
+          echo SONARQUBE_PROJECT_KEY == $(SONARQUBE_PROJECT_KEY)
+          echo SONARQUBE_PROJECT_NAME == $(SONARQUBE_PROJECT_NAME)
+          echo SONARQUBE_SERVER_ENDPOINT == $(SONARQUBE_SERVER_ENDPOINT)
+          
+          echo "START OF PART I -- Build application"
+    - task: UseDotNet@2
+      displayName: Use .NET 7 Core sdk
+      inputs:
+        packageType: 'sdk'
+        version: '7.0.x'
+        includePreviewVersions: true    
+    - task: DotNetCoreCLI@2
+      displayName: Restore Packages
+      inputs:
+        command: 'restore'
+        projects: '**/*.csproj'
+        feedsToUse: 'config'
+        nugetConfigPath: 'NuGet.Config'
+    - task: SonarQubePrepare@5
+      displayName: Prepare for SonarQube Analysis
+      condition: eq(variables['PUBLISH_SONARQUBE'], 'true')
+      inputs:
+        SonarQube: $(SONARQUBE_SERVER_ENDPOINT)
+        scannerMode: 'MSBuild'
+        projectKey: $(SONARQUBE_PROJECT_KEY)
+        projectName: $(SONARQUBE_PROJECT_NAME)
+        extraProperties: |
+          sonar.coverageReportPaths=".\.sonarqubecoverage\SonarQube.xml"
+    - task: DotNetCoreCLI@2
+      displayName: 'Build C# Projects'
+      inputs:
+        command: 'build'
+        projects: '**/*.csproj'
+        arguments: '--configuration $(BuildConfiguration)'
+    - task: DotNetCoreCLI@2
+      displayName: Run Unit Tests
+      inputs:
+        command: 'test'
+        projects: '**/*Tests/*.csproj'
+        arguments: '--configuration $(BuildConfiguration) --no-build --collect:"XPlat Code Coverage"'
+        publishTestResults: false
+      continueOnError: false
+    - task: CmdLine@2
+      displayName: Log Tests Output
+      inputs:
+        script: |
+          tree "$(Build.SourcesDirectory)/test" /A
+    - task: reportgenerator@5
+      displayName: Report Generator - Code Coverage
+      inputs:
+        reports: test/*/TestResults/*/coverage.cobertura.xml
+        targetdir: .sonarqubecoverage
+        reporttypes: SonarQube
+    - task: SonarQubeAnalyze@5
+      displayName: Run SonarQube Analysis
+      condition: eq(variables['PUBLISH_SONARQUBE'], 'true')
+    - task: SonarQubePublish@5
+      displayName: Publish SonarQube Analysis
+      condition: eq(variables['PUBLISH_SONARQUBE'], 'true')
+      inputs:
+        pollingTimeoutSec: '300'
+    - task: DotNetCoreCLI@2
+      displayName: 'Publish Output files to Artifact Directory'
+      condition: eq(variables['PUBLISH_ARTIFACTS'], 'true')
+      inputs:
+        command: 'publish'
+        publishWebProjects: true
+        arguments: '--configuration $(BuildConfiguration) --output "$(build.artifactstagingdirectory)"'
+        zipAfterPublish: false
+    - task: DotNetCoreCLI@2
+      displayName: 'Publish Output files to Artifact Directory'
+      condition: eq(variables['PUBLISH_ARTIFACTS'], 'true')
+      inputs:
+        command: 'publish'
+        publishWebProjects: false
+        projects: '**/*.Api.csproj'
+        arguments: '--configuration $(BuildConfiguration) --output "$(build.artifactstagingdirectory)"'
+        zipAfterPublish: false
+    - task: PublishSymbols@2
+      displayName: 'Publish symbols path'
+      condition: eq(variables['PUBLISH_ARTIFACTS'], 'true')
+      inputs:
+        SearchPattern: '**/bin/**/*.pdb'
+        PublishSymbols: false
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Application Artifacts'
+      condition: eq(variables['PUBLISH_ARTIFACTS'], 'true')
+      inputs:
+        PathtoPublish: '$(build.artifactstagingdirectory)'
+        ArtifactName: 'drop'
+        publishLocation: 'Container'
+    - task: CmdLine@2
+      displayName: temporary dump - remove it after confirm
+      condition: eq(variables['PUBLISH_ARTIFACTS'], 'true')
+      inputs:
+        script: |
+          pwd
+
+          echo Build.SourcesDirectory == $(Build.SourcesDirectory)
+
+          dir $(Build.SourcesDirectory)
+
+          echo Build.artifactstagingdirectory == $(Build.artifactstagingdirectory)
+
+          dir $(Build.artifactstagingdirectory)
+
+          echo Build.BinariesDirectory == $(Build.BinariesDirectory)
+
+          dir $(Build.BinariesDirectory)
+          echo "END OF PART I -- Build application"
+    - task: DeleteFiles@1
+      displayName: 'Delete contents of build.artifactstagingdirectory'
+      condition: eq(variables['PUBLISH_ARTIFACTS'], 'true')
+      inputs:
+        SourceFolder: '$(build.artifactstagingdirectory)'
+        Contents: '**/*'
+        RemoveDotFiles: true
+    - task: CmdLine@2
+      displayName: Dump directory contents
+      condition: eq(variables['PUBLISH_ARTIFACTS'], 'true')
+      inputs:
+        script: |
+          pwd
+          
+          echo Build.SourcesDirectory == $(Build.SourcesDirectory)
+          
+          dir $(Build.SourcesDirectory)
+          
+          echo Build.artifactstagingdirectory == $(Build.artifactstagingdirectory)
+          
+          dir $(Build.artifactstagingdirectory)
+          
+          echo Build.BinariesDirectory == $(Build.BinariesDirectory)
+          
+          dir $(Build.BinariesDirectory)
+          echo "END OF PART I -- Build application"
+          
+########################################################################
+# Part II: Build the SQL Project database.
+########################################################################
+- job: Job_SQLProjBuildDB
+  displayName: Build Database from DB Project
+  condition: eq(variables['BUILD_SQL'], 'true')
+  dependsOn: Job_BuildApplication
+  steps:
+    - task: CmdLine@2
+      displayName: Dump directory contents
+      inputs:
+        script: |
+          pwd
+
+          echo BuildConfiguration == $(BuildConfiguration)
+          
+          echo BuildPlatform == $(BuildPlatform)
+          
+          echo SQLProjPublishPath == $(SQLProjPublishPath)
+          
+          echo Build.SourcesDirectory == $(Build.SourcesDirectory)
+
+          dir $(Build.SourcesDirectory)
+
+          echo Build.artifactstagingdirectory == $(Build.artifactstagingdirectory)
+
+          dir $(Build.artifactstagingdirectory)
+
+          echo Build.BinariesDirectory == $(Build.BinariesDirectory)
+
+          dir $(Build.BinariesDirectory)
+          echo "START OF PART II -- Build the database"
+    - task: VSBuild@1
+      displayName: 'Build dababase project'
+      inputs:
+        solution: '**\*.sqlproj'
+        msbuildArgs: '/p:DSP="Microsoft.Data.Tools.Schema.Sql.SqlAzureV12DatabaseSchemaProvider"'
+        configuration: '$(BuildConfiguration)'
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish database Artifacts'
+      inputs:
+        PathtoPublish: '$(agent.builddirectory)$(SQLProjPublishPath)$(BuildConfiguration)'
+        ArtifactName: 'dropDB'
+    - task: CmdLine@2
+      displayName: Dump directory contents
+      inputs:
+        script: |
+          pwd
+          
+          echo Build.SourcesDirectory == $(Build.SourcesDirectory)
+          
+          dir $(Build.SourcesDirectory)
+          
+          echo Build.artifactstagingdirectory == $(Build.artifactstagingdirectory)
+          
+          dir $(Build.artifactstagingdirectory)
+          
+          echo Build.BinariesDirectory == $(Build.BinariesDirectory)
+          
+          dir $(Build.BinariesDirectory)
+          echo "END OF PART II -- Build the database"

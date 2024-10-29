@@ -1,0 +1,33 @@
+# Ansible pipeline
+#
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+steps:
+
+- task: UsePythonVersion@0
+  displayName: 'Install Python'
+  inputs:
+    versionSpec: '3.9'
+
+
+- script: pip install ansible
+  displayName: 'Install Ansible'
+
+- script: pip install -r requirements.txt
+  displayName: 'Install Azure modules needed'
+
+- script: pip install azure-mgmt-datalake-store
+  displayName: 'Install Azure Datalake module'
+
+- script: ansible-galaxy collection install azure.azcollection
+  displayName: 'Install Ansible Azure Collection'
+  
+- script: ansible-playbook sqlserver.yml --extra-vars "@ip_vars.yml" -vvv
+  displayName: 'Run Ansible Playbook'
+  env:
+    AZURE_SUBSCRIPTION_ID: $(TerraformSubscriptionID)
+    AZURE_CLIENT_ID: $(TerraformClientID)
+    AZURE_SECRET: $(TerraformClientSecret) 
+    AZURE_TENANT: $(TerraformTenantID) 

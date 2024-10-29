@@ -1,0 +1,90 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "D:\\2024\\KubernetesIngressDemo\\UserAPI\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{92CCF94B-A032-4F38-A1DC-5A5341E906F2}|UserAPI\\UserAPI.csproj|d:\\2024\\kubernetesingressdemo\\userapi\\userapi\\dockerfile||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{92CCF94B-A032-4F38-A1DC-5A5341E906F2}|UserAPI\\UserAPI.csproj|solutionrelative:userapi\\dockerfile||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{92CCF94B-A032-4F38-A1DC-5A5341E906F2}|UserAPI\\UserAPI.csproj|d:\\2024\\kubernetesingressdemo\\userapi\\userapi\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{92CCF94B-A032-4F38-A1DC-5A5341E906F2}|UserAPI\\UserAPI.csproj|solutionrelative:userapi\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{92CCF94B-A032-4F38-A1DC-5A5341E906F2}|UserAPI\\UserAPI.csproj|d:\\2024\\kubernetesingressdemo\\userapi\\userapi\\controllers\\userscontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{92CCF94B-A032-4F38-A1DC-5A5341E906F2}|UserAPI\\UserAPI.csproj|solutionrelative:userapi\\controllers\\userscontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{92CCF94B-A032-4F38-A1DC-5A5341E906F2}|UserAPI\\UserAPI.csproj|d:\\2024\\kubernetesingressdemo\\userapi\\userapi\\models\\user.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{92CCF94B-A032-4F38-A1DC-5A5341E906F2}|UserAPI\\UserAPI.csproj|solutionrelative:userapi\\models\\user.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 1,
+          "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{cce594b6-0c39-4442-ba28-10c64ac7e89f}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "Dockerfile",
+              "DocumentMoniker": "D:\\2024\\KubernetesIngressDemo\\UserAPI\\UserAPI\\Dockerfile",
+              "RelativeDocumentMoniker": "UserAPI\\Dockerfile",
+              "ToolTip": "D:\\2024\\KubernetesIngressDemo\\UserAPI\\UserAPI\\Dockerfile",
+              "RelativeToolTip": "UserAPI\\Dockerfile",
+              "ViewState": "AQIAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
+              "WhenOpened": "2024-04-07T10:01:44.453Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "Program.cs",
+              "DocumentMoniker": "D:\\2024\\KubernetesIngressDemo\\UserAPI\\UserAPI\\Program.cs",
+              "RelativeDocumentMoniker": "UserAPI\\Program.cs",
+              "ToolTip": "D:\\2024\\KubernetesIngressDemo\\UserAPI\\UserAPI\\Program.cs",
+              "RelativeToolTip": "UserAPI\\Program.cs",
+              "ViewState": "AQIAAAAAAAAAAAAAAAAAAAwAAAAAAAAA",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2024-04-06T09:39:51.097Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "UsersController.cs",
+              "DocumentMoniker": "D:\\2024\\KubernetesIngressDemo\\UserAPI\\UserAPI\\Controllers\\UsersController.cs",
+              "RelativeDocumentMoniker": "UserAPI\\Controllers\\UsersController.cs",
+              "ToolTip": "D:\\2024\\KubernetesIngressDemo\\UserAPI\\UserAPI\\Controllers\\UsersController.cs",
+              "RelativeToolTip": "UserAPI\\Controllers\\UsersController.cs",
+              "ViewState": "AQIAAAAAAAAAAAAAAAAAAAkAAAABAAAA",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2024-04-06T09:37:36.691Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "User.cs",
+              "DocumentMoniker": "D:\\2024\\KubernetesIngressDemo\\UserAPI\\UserAPI\\Models\\User.cs",
+              "RelativeDocumentMoniker": "UserAPI\\Models\\User.cs",
+              "ToolTip": "D:\\2024\\KubernetesIngressDemo\\UserAPI\\UserAPI\\Models\\User.cs",
+              "RelativeToolTip": "UserAPI\\Models\\User.cs",
+              "ViewState": "AQIAAAAAAAAAAAAAAAAAAAkAAAAAAAAA",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2024-04-06T09:37:13.22Z"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

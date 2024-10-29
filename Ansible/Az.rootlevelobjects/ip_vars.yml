@@ -1,0 +1,23 @@
+rgname: "rg-kii-es-rootlevelobjects-dev"
+sqlservername: "sql-kii-es-rootlevelobjects-dev-001"
+subscription_id: "dfee24ff-5306-42f0-b2ab-979e2192dceb"
+microsoft_enterprise_app_principal_id: "ab4668bc-9b8f-4b3d-9a35-b03c764ab966"
+
+ipname1: "SAN1"
+ipstart1: "216.194.106.73"
+ipend1: "216.194.106.73"
+
+
+ipname2: "SAN2"
+ipstart2: "216.205.115.58"
+ipend2: "216.205.115.58"
+
+
+ipname3: "PDX1"
+ipstart3: "216.194.107.80"
+ipend3: "216.194.107.80"
+
+
+ipname4: "PDX2"
+ipstart4: "45.62.180.86"
+ipend4: "45.62.180.86"

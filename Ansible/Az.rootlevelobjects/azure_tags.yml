@@ -1,0 +1,14 @@
+- name: Update Azure tags of existing resource group
+  hosts: localhost
+  connection: local
+  tasks:
+    - name: Get facts about the resource group
+      azure_rm_resourcegroup_info:
+        name: rg-kii-es-rootlevelobjects-dev
+      register: rg_info
+
+    - name: Update tags of the resource group
+      azure_rm_resourcegroup:
+        name: "rg-kii-es-rootlevelobjects-dev"  # Use the name of the resource group directly
+        tags:
+          Owner: Mike

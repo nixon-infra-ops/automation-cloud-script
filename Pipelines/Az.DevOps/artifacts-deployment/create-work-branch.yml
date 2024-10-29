@@ -1,0 +1,30 @@
+pool:
+  vmImage: windows-latest
+  name: Azure Pipelines
+
+parameters:
+  - name: WorkBranchName
+    displayName: Specify the work branch name (make sure to add the "dev." prefix)
+    default: dev.WorkBranch
+    type: string
+
+jobs:
+- job: Job_BuildApplication
+  displayName: Create Work Branch
+  steps:
+    - checkout: self
+      persistCredentials: true
+    - script: |
+        git config --global user.name "BuildService"
+        git config --global user.email "azure.buildservice@kyocera.com"
+        git fetch
+        git checkout master
+        git pull origin master
+        git checkout -b ${{ parameters.WorkBranchName}}
+        git status
+        git fetch
+        git merge origin/release
+        git push --set-upstream origin ${{ parameters.WorkBranchName}}
+        git log --oneline -n 10
+      workingDirectory: $(Build.SourcesDirectory)
+      displayName: 'Create Work Branch (git commands)'

@@ -1,0 +1,113 @@
+pool:
+  vmImage: windows-latest
+  name: Azure Pipelines
+
+variables:
+  PROJECT_FILE_PATH: 'src/KII.Platform.UI.Button/KII.Platform.UI.Button.csproj'
+  VAR_FILE_PATH: 'vars.bat'
+
+parameters:
+  - name: RELEASE_TYPE
+    displayName: Specify the release type based on the scope of the changes
+    default: Patch
+    type: string
+    values:
+      - Major
+      - Minor
+      - Patch
+
+jobs:
+- job: Job_CreateReleaseCandidate
+  displayName: Create Release Candidate
+  steps:
+    - checkout: self
+      persistCredentials: true
+    - script: |
+        git config --global user.name "BuildService"
+        git config --global user.email "azure.buildservice@kyocera.com"
+        git fetch
+        git checkout releaseCandidate
+        git pull origin releaseCandidate
+        call vars.bat
+        echo Loaded variables from file:
+        echo PUBLISH_VERSION: %PUBLISH_VERSION%
+        echo ##vso[task.setvariable variable=CURRENT_PUBLISH_VERSION]%PUBLISH_VERSION%
+      workingDirectory: $(Build.SourcesDirectory)
+      displayName: 'Get Current Version (git commands)'
+    - task: PowerShell@2
+      displayName: Calculate New Version
+      inputs:
+        targetType: 'inline'
+        script: |
+            $releaseType = "${{ parameters.RELEASE_TYPE }}";
+            $currentPublishVersion = "$(CURRENT_PUBLISH_VERSION)"
+            $newPublishVersion = "$(CURRENT_PUBLISH_VERSION)"
+
+            Write-Output "============================="
+            Write-Output "= Before Version Generation ="
+            Write-Output "releaseType `t`t= $releaseType"
+            Write-Output "currentPublishVersion `t= $currentPublishVersion"
+
+            if ($releaseType -eq "Major") {
+                $versionParts = $currentPublishVersion -split "\."
+                $major = [int]$versionParts[0] + 1
+                $newPublishVersion = "$major.0.0"
+            }
+            elseif ($releaseType -eq "Minor") {
+                $versionParts = $currentPublishVersion -split "\."
+                $major = $versionParts[0]
+                $minor = [int]$versionParts[1] + 1
+                $newPublishVersion = "$major.$minor.0"
+            }
+            elseif ($releaseType -eq "Patch") {
+                $versionParts = $currentPublishVersion -split "\."
+                $major = $versionParts[0]
+                $minor = $versionParts[1]
+                $patch = [int]$versionParts[2] + 1
+                $newPublishVersion = "$major.$minor.$patch"
+            }
+
+            Write-Output "============================"
+            Write-Output "= After Version Generation ="
+            Write-Output "currentPublishVersion `t= $currentPublishVersion"
+            Write-Output "newPublishVersion `t= $newPublishVersion"
+
+            Write-Output "============================"
+            Write-Output "Setting the value for NEW_PUBLISH_VERSION variable"
+            Write-Host "##vso[task.setVariable variable=NEW_PUBLISH_VERSION]$newPublishVersion"
+    - task: PowerShell@2
+      displayName: Write New Version
+      inputs:
+        targetType: 'inline'
+        script: |
+            $publishVersion = "$(NEW_PUBLISH_VERSION)";
+            $projectFilePath = "$(PROJECT_FILE_PATH)"
+            $varsBatPath = "$(VAR_FILE_PATH)"
+
+            Write-Output "publishVersion = $publishVersion"
+            Write-Output "$projectFilePath = $projectFilePath"
+
+            Write-Output "[1] Updating $projectFilePath..."
+            [xml]$xml = Get-Content $projectFilePath
+            $xml.Project.PropertyGroup.Version = "$publishVersion"
+            $xml.Save($projectFilePath)
+
+            Write-Output "[2] Updating $varsBatPath..."
+            $varsBatContent = Get-Content $varsBatPath
+            $varsBatContent -replace 'SET PUBLISH_VERSION=.+', "SET PUBLISH_VERSION=$publishVersion" | Set-Content $varsBatPath
+    - script: |
+        git config --global user.name "BuildService"
+        git config --global user.email "azure.buildservice@kyocera.com"
+        git status
+        git checkout master
+        git pull origin master
+        git status
+        git checkout -b releaseCandidate.%NEW_PUBLISH_VERSION%
+        git add .
+        git status
+        git commit -am "Release Candidate v%NEW_PUBLISH_VERSION%"
+        git status
+        git push --set-upstream origin releaseCandidate.%NEW_PUBLISH_VERSION%
+        git log --oneline -n 10
+      workingDirectory: $(Build.SourcesDirectory)
+      displayName: 'Create Release Candidate Branch'

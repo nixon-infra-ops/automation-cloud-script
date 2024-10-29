@@ -1,0 +1,72 @@
+parameters:
+- name: rootFolder
+  type: string
+- name: tfvarsFile
+  type: string
+- name: Environment
+  type: string
+
+stages:
+- stage: 'Terraform_Plan'
+  displayName: 'Terraform Plan'
+  jobs:
+  - job: 'Terraform_Plan'
+    pool:
+      vmImage: 'ubuntu-20.04'
+    steps:
+    - script: |
+        echo "Running Terraform init..."
+        terraform init \
+          -backend-config="resource_group_name=$(resource_group_name)" \
+          -backend-config="storage_account_name=$(storage_account_name)" \
+          -backend-config="container_name=$(container_name)" \
+          -backend-config="key=$(key)"
+        echo "Running Terraform plan..."
+        terraform plan -var-file $(tfvarsFile) -out=plan.tfplan
+      displayName: 'Terraform plan'
+      workingDirectory: ${{parameters.rootFolder }}
+      env:
+        ARM_CLIENT_SECRET: $(TerraformClientSecret)
+        ARM_CLIENT_ID: $(TerraformClientID)
+        ARM_TENANT_ID: $(TerraformTenantID)
+        ARM_SUBSCRIPTION_ID: $(TerraformSubscriptionID)
+    - task: PublishBuildArtifacts@1
+      inputs:
+        PathtoPublish: '$(System.DefaultWorkingDirectory)/${{parameters.rootFolder}}'
+        ArtifactName: 'TerraformPlan'
+        publishLocation: 'Container'
+- stage: 'Terraform_Apply'
+  displayName: 'Terraform Apply'
+  dependsOn:
+  - 'Terraform_Plan'
+  condition: succeeded()
+  jobs:
+  - deployment: 'Terraform_Apply'
+    pool:
+      vmImage: 'ubuntu-20.04'
+    environment: ${{parameters.Environment }}
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
+          - download: current
+            artifact: 'TerraformPlan'
+            patterns: '**/plan.tfplan'
+            displayName: 'Download Terraform plan'
+          - script: |
+              echo "Running Terraform init..."
+              terraform init \
+                -backend-config="resource_group_name=$(resource_group_name)" \
+                -backend-config="storage_account_name=$(storage_account_name)" \
+                -backend-config="container_name=$(container_name)" \
+                -backend-config="key=$(key)"            
+              echo "Running Terraform apply..."
+              terraform apply -auto-approve /home/vsts/work/1/TerraformPlan/plan.tfplan      
+            displayName: 'Terraform apply'
+            workingDirectory: ${{ parameters.rootFolder }}
+            env:
+              ARM_CLIENT_SECRET: $(TerraformClientSecret)
+              ARM_CLIENT_ID: $(TerraformClientID)
+              ARM_TENANT_ID: $(TerraformTenantID)
+              ARM_SUBSCRIPTION_ID: $(TerraformSubscriptionID)

@@ -1,0 +1,105 @@
+pool:
+  vmImage: windows-latest
+  name: Azure Pipelines
+
+variables:
+  BUILD_CONFIGURATION: 'Release'
+  BUILD_PLATFORM: 'any cpu'
+  SONARQUBE_PROJECT_KEY: KII.Platform.UI.Button
+  SONARQUBE_PROJECT_NAME: 'KII.Platform.UI.Button'
+  SONARQUBE_SERVER_ENDPOINT: 'SonarQube - Developer Edition'
+  PUBLISH_SONARQUBE: false # true 
+  NUGET_PACKAGES: $(Pipeline.Workspace)/.nuget/packages
+
+#####################################
+##### START OF STAGE BUILD ##########
+#####################################
+stages:
+- stage: Build
+  displayName: 'Build Application'
+  jobs:
+  - job: Job_BuildApplication
+    displayName: Build the App
+    steps:
+    - checkout: self
+      persistCredentials: true
+      displayName: Git Checkout
+    - task: CmdLine@2
+      displayName: Log Pipeline Information
+      inputs:
+        script: |
+          pwd
+          echo BuildConfiguration == $(BuildConfiguration)
+          echo BUILD_PLATFORM == $(BUILD_PLATFORM)
+          echo Build.SourcesDirectory == $(Build.SourcesDirectory)
+          tree "$(Build.SourcesDirectory)" /A
+          dir $(Build.SourcesDirectory)
+          echo Build.artifactstagingdirectory == $(Build.artifactstagingdirectory)
+          dir $(Build.artifactstagingdirectory)
+          echo Build.BinariesDirectory == $(Build.BinariesDirectory)
+          dir $(Build.BinariesDirectory)
+          echo Build.DefinitionName == $(Build.DefinitionName)
+          echo PUBLISH_SONARQUBE == $(PUBLISH_SONARQUBE)
+          echo SONARQUBE_PROJECT_KEY == $(SONARQUBE_PROJECT_KEY)
+          echo SONARQUBE_PROJECT_NAME == $(SONARQUBE_PROJECT_NAME)
+          echo SONARQUBE_SERVER_ENDPOINT == $(SONARQUBE_SERVER_ENDPOINT)
+          echo Build.Reason == $(Build.Reason)
+          echo System.PullRequest.targetBranchName == $(System.PullRequest.targetBranchName)
+          echo "START OF PART I -- Build application"
+    - task: UseDotNet@2
+      displayName: Use .NET 8 Core sdk
+      inputs:
+        packageType: 'sdk'
+        version: '8.0.x'
+        includePreviewVersions: true
+    - task: Cache@2
+      displayName: NuGet Cache
+      continueOnError: true
+      inputs:
+        key: 'nuget | "$(Agent.OS)" | $(Build.SourcesDirectory)/**/packages.lock.json'
+        path: '$(NUGET_PACKAGES)'
+        cacheHitVar: 'CACHE_RESTORED'
+        restoreKeys: |
+          nuget | "$(Agent.OS)"
+          nuget
+    - task: DotNetCoreCLI@2
+      displayName: Restore Packages
+      condition: ne(variables.CACHE_RESTORED, true)
+      inputs:
+        command: 'restore'
+        projects: '**/*.csproj'
+        feedsToUse: 'config'
+        nugetConfigPath: 'NuGet.Config'
+    - task: SonarQubePrepare@5
+      displayName: Prepare for SonarQube Analysis
+      condition: eq(variables['PUBLISH_SONARQUBE'], 'true')
+      inputs:
+        SonarQube: $(SONARQUBE_SERVER_ENDPOINT)
+        scannerMode: 'MSBuild'
+        projectKey: $(SONARQUBE_PROJECT_KEY)
+        projectName:  $(SONARQUBE_PROJECT_NAME)
+        extraProperties: 'sonar.coverageReportPaths=".sonarqubecoverage/SonarQube.xml"'
+    - task: DotNetCoreCLI@2
+      displayName: 'Build C# Projects'
+      inputs:
+        command: 'build'
+        projects: '**/*.csproj'
+        arguments: '--configuration $(BuildConfiguration)'
+    - task: DotNetCoreCLI@2
+      displayName: Run Unit Tests
+      inputs:
+        command: 'test'
+        projects: '**/*Tests/*.csproj'
+        arguments: '--configuration $(BuildConfiguration) --no-build --collect:"XPlat Code Coverage"'
+        publishTestResults: false
+    - task: SonarQubeAnalyze@5
+      displayName: Run SonarQube Analysis
+      condition: eq(variables['PUBLISH_SONARQUBE'], 'true')
+    - task: SonarQubePublish@5
+      displayName: Publish SonarQube Analysis
+      condition: eq(variables['PUBLISH_SONARQUBE'], 'true')
+      inputs:
+        pollingTimeoutSec: '300'
+##################################################
+##### END OF STAGE BUILD #########################
+##################################################
