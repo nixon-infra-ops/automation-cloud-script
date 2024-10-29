@@ -121,7 +121,7 @@ fi
 if [[ -z "$AZURE_DEVOPS_PAT" ]]; then
   # Prompt the user for an Azure DevOps PAT
   read -p "Enter Azure DevOps PAT (hidden) [Default: ***hidden***]: " -s AZURE_DEVOPS_PAT
-  AZURE_DEVOPS_PAT=${AZURE_DEVOPS_PAT:-"INPUT TOKEN HERE"}
+  AZURE_DEVOPS_PAT=${AZURE_DEVOPS_PAT:-"FDSDSFSDFSDFDDFFDS"}
   echo # Ensure a new line after silent input
 fi
 
